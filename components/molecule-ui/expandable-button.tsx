@@ -37,7 +37,7 @@ export function ExpandableButton({
   onClick,
   children,
   ...props
-}: HTMLMotionProps<"button"> & ExpandableButtonProps) {
+}: HTMLMotionProps<"div"> & ExpandableButtonProps) {
   const [_expanded, _setExpanded] = React.useState(false)
   const [inputValue, setInputValue] = React.useState("")
   const [suggestions, setSuggestions] = React.useState<string[]>([])
