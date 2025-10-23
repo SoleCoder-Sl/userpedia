@@ -15,10 +15,12 @@ export default function PersonPage() {
   const [imageUrl, setImageUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [isImageLoading, setIsImageLoading] = useState(true);
+  const [showSlowMessage, setShowSlowMessage] = useState(false);
 
   // Track in-flight requests to prevent duplicates
   const bioFetchingRef = useRef(false);
   const portraitFetchingRef = useRef(false);
+  const slowMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Reset state when person changes to prevent showing wrong data
@@ -72,6 +74,16 @@ export default function PersonPage() {
       portraitFetchingRef.current = true;
       
       setIsImageLoading(true);
+      setShowSlowMessage(false);
+      
+      // Show message after 15 seconds if still loading
+      slowMessageTimerRef.current = setTimeout(() => {
+        if (!portraitAborted) {
+          console.log('⏰ Portrait taking longer than expected, showing message...');
+          setShowSlowMessage(true);
+        }
+      }, 15000); // 15 seconds
+      
       try {
         const response = await fetch('/api/portrait', {
           method: 'POST',
@@ -93,6 +105,7 @@ export default function PersonPage() {
           if (portraitUrl) {
             console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
             setImageUrl(portraitUrl);
+            setShowSlowMessage(false); // Hide message when image loads
           } else {
             console.warn(`No portrait URL received for: ${personName}`);
           }
@@ -106,6 +119,12 @@ export default function PersonPage() {
       } finally {
         setIsImageLoading(false);
         portraitFetchingRef.current = false;
+        
+        // Clear the slow message timer
+        if (slowMessageTimerRef.current) {
+          clearTimeout(slowMessageTimerRef.current);
+          slowMessageTimerRef.current = null;
+        }
       }
     };
 
@@ -116,6 +135,12 @@ export default function PersonPage() {
     return () => {
       bioAborted = true;
       portraitAborted = true;
+      
+      // Clear slow message timer on unmount
+      if (slowMessageTimerRef.current) {
+        clearTimeout(slowMessageTimerRef.current);
+        slowMessageTimerRef.current = null;
+      }
     };
   }, [personName]);
 
@@ -267,15 +292,37 @@ export default function PersonPage() {
                   width: '100%',
                   height: '100%',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   background: 'rgba(0, 0, 0, 0.2)',
                   borderRadius: '10px',
                   color: 'rgba(255, 255, 255, 0.6)',
                   fontSize: '14px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  gap: '10px',
                 }}
               >
-                Generating portrait...
+                {showSlowMessage ? (
+                  <>
+                    <div style={{ fontSize: '16px', fontWeight: 600 }}>
+                      🎨 First time search!
+                    </div>
+                    <div style={{ fontSize: '13px', lineHeight: '1.5', maxWidth: '350px' }}>
+                      Our team is creating a custom portrait for {personName}.
+                      This may take 30-60 seconds. Please wait...
+                    </div>
+                    <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '10px' }}>
+                      Future searches will be instant!
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>Generating portrait...</div>
+                    <div style={{ fontSize: '11px', opacity: 0.7 }}>Please wait</div>
+                  </>
+                )}
               </div>
             ) : imageUrl ? (
               <img
@@ -299,15 +346,18 @@ export default function PersonPage() {
                   width: '100%',
                   height: '100%',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   background: 'rgba(0, 0, 0, 0.1)',
                   borderRadius: '10px',
                   color: 'rgba(255, 255, 255, 0.4)',
                   fontSize: '12px',
+                  gap: '5px',
                 }}
               >
-                Portrait unavailable
+                <div>❌ Portrait generation failed</div>
+                <div style={{ fontSize: '10px', opacity: 0.6 }}>Please try again later</div>
               </div>
             )}
           </div>
