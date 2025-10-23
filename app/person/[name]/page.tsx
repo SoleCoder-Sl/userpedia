@@ -4,7 +4,13 @@ import { ExpandableButton } from "@/components/molecule-ui/expandable-button";
 import { Search } from "lucide-react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+
+// Global fetch tracking to prevent duplicates across component remounts
+const activeFetches = {
+  biography: new Set<string>(),
+  portrait: new Set<string>()
+};
 
 export default function PersonPage() {
   const router = useRouter();
@@ -32,6 +38,15 @@ export default function PersonPage() {
     let slowTimer: NodeJS.Timeout | null = null;
 
     const fetchBiography = async () => {
+      const normalizedName = personName.toLowerCase().trim();
+      
+      // Check if already fetching this person's biography
+      if (activeFetches.biography.has(normalizedName)) {
+        console.log(`⏭️ Biography fetch already in progress for: ${personName}`);
+        return;
+      }
+      
+      activeFetches.biography.add(normalizedName);
       console.log(`📖 Fetching biography for: ${personName}`);
       
       try {
@@ -61,6 +76,7 @@ export default function PersonPage() {
           setBiography(`<p>Unable to load biography for ${personName}.</p>`);
         }
       } finally {
+        activeFetches.biography.delete(normalizedName);
         if (isActive) {
           setIsLoading(false);
         }
@@ -68,6 +84,15 @@ export default function PersonPage() {
     };
 
     const fetchPortrait = async () => {
+      const normalizedName = personName.toLowerCase().trim();
+      
+      // Check if already fetching this person's portrait
+      if (activeFetches.portrait.has(normalizedName)) {
+        console.log(`⏭️ Portrait fetch already in progress for: ${personName}`);
+        return;
+      }
+      
+      activeFetches.portrait.add(normalizedName);
       console.log(`🖼️ Fetching portrait for: ${personName}`);
       
       // Show slow message after 15 seconds
@@ -118,6 +143,7 @@ export default function PersonPage() {
           console.error('❌ Error fetching portrait:', error);
         }
       } finally {
+        activeFetches.portrait.delete(normalizedName);
         if (slowTimer) {
           clearTimeout(slowTimer);
         }
@@ -276,7 +302,7 @@ export default function PersonPage() {
             display: 'flex',
             alignItems: 'center',
             paddingLeft: '250px', // Space for the image
-            overflow: 'hidden',
+            overflow: 'visible', // Allow image to stick out!
           }}
         >
           {/* Image Container (Half out, half in) */}
@@ -375,7 +401,8 @@ export default function PersonPage() {
             style={{
               flex: 1,
               height: '100%',
-              overflowY: 'scroll',
+              overflowY: 'auto', // Changed to auto for better scrolling
+              overflowX: 'hidden', // Hide horizontal overflow
               padding: '20px 40px 20px 0', // Adjusted padding for left alignment
               color: 'rgba(255, 255, 255, 0.8)',
               fontSize: '1rem',
