@@ -12,19 +12,17 @@ export default function PersonPage() {
   const personName = decodeURIComponent(params.name as string);
   
   const [biography, setBiography] = useState<string>('');
-  const [imageUrl, setImageUrl] = useState<string>('/MG.png');
+  const [imageUrl, setImageUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [isImageLoading, setIsImageLoading] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
 
   // Track in-flight requests to prevent duplicates
   const bioFetchingRef = useRef(false);
   const portraitFetchingRef = useRef(false);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Reset state when person changes to prevent showing wrong data
-    setImageUrl('/MG.png');
+    setImageUrl('');
     setBiography('');
     setIsLoading(true);
     setIsImageLoading(true);
@@ -85,49 +83,25 @@ export default function PersonPage() {
 
         if (!portraitAborted && response.ok) {
           const data = await response.json();
-          let portraitUrl = data.imageUrl || '/MG.png';
-          const generating = data.generating || false;
+          let portraitUrl = data.imageUrl || '';
           
-          // If image is being generated in background, start polling
-          if (generating && portraitUrl === '/MG.png') {
-            setIsGenerating(true);
-            console.log(`⏳ Portrait is being generated in background. Will check again in 60s...`);
-            
-            // Poll for the image after 60 seconds
-            if (pollIntervalRef.current) {
-              clearTimeout(pollIntervalRef.current);
-            }
-            pollIntervalRef.current = setTimeout(() => {
-              console.log(`🔄 Polling for generated portrait...`);
-              portraitFetchingRef.current = false; // Reset to allow re-fetch
-              fetchPortrait(); // Re-fetch the portrait
-            }, 60000); // 60 seconds
-          }
-          
-          // If it's a Google Drive URL, proxy it through our server to avoid CORS
-          if (portraitUrl.includes('drive.google.com')) {
+          if (portraitUrl && portraitUrl.includes('drive.google.com')) {
+            // Proxy through our server to avoid CORS
             portraitUrl = `/api/image-proxy?url=${encodeURIComponent(portraitUrl)}`;
           }
 
-          console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
-          setImageUrl(portraitUrl);
-          
-          // If we got a real image, stop polling
-          if (portraitUrl !== '/MG.png') {
-            setIsGenerating(false);
-            if (pollIntervalRef.current) {
-              clearTimeout(pollIntervalRef.current);
-              pollIntervalRef.current = null;
-            }
+          if (portraitUrl) {
+            console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
+            setImageUrl(portraitUrl);
+          } else {
+            console.warn(`No portrait URL received for: ${personName}`);
           }
         } else if (!portraitAborted) {
           console.error('Failed to fetch portrait:', response.statusText);
-          setImageUrl('/MG.png');
         }
       } catch (error) {
         if (!portraitAborted) {
           console.error('Error fetching portrait:', error);
-          setImageUrl('/MG.png');
         }
       } finally {
         setIsImageLoading(false);
@@ -142,12 +116,6 @@ export default function PersonPage() {
     return () => {
       bioAborted = true;
       portraitAborted = true;
-      
-      // Clear polling interval on unmount
-      if (pollIntervalRef.current) {
-        clearTimeout(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
     };
   }, [personName]);
 
@@ -307,9 +275,9 @@ export default function PersonPage() {
                   fontSize: '14px',
                 }}
               >
-                Loading portrait...
+                Generating portrait...
               </div>
-            ) : (
+            ) : imageUrl ? (
               <img
                 src={imageUrl}
                 alt={personName}
@@ -323,10 +291,24 @@ export default function PersonPage() {
                 }}
                 onError={(e) => {
                   console.error(`Failed to load portrait: ${imageUrl}`);
-                  // Fallback to default image if proxy fails
-                  (e.target as HTMLImageElement).src = '/MG.png';
                 }}
               />
+            ) : (
+              <div 
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(0, 0, 0, 0.1)',
+                  borderRadius: '10px',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: '12px',
+                }}
+              >
+                Portrait unavailable
+              </div>
             )}
           </div>
 

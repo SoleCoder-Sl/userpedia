@@ -39,99 +39,100 @@ export async function POST(req: NextRequest) {
       }
     }
 
-      // Step 2: Trigger webhook in background (don't wait for response to avoid timeout)
-      console.log(`🎨 Triggering background portrait generation for: ${name}`);
+      // Step 2: Call webhook and wait for image URL
+      console.log(`🎨 Generating portrait for: ${name}`);
 
-      // Fire and forget - don't await the webhook response
-      fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          name,
-          callbackUrl: `${process.env.NEXT_PUBLIC_SUPABASE_URL || ''}/rest/v1/biographies` // For webhook to update Supabase directly
-        }),
-      })
-        .then(async (webhookResponse) => {
-          if (!webhookResponse.ok) {
-            console.error(`⚠️ Webhook failed for ${name}:`, webhookResponse.statusText);
-            return;
-          }
-
-          // Try to get the response
-          let imageUrl = '/MG.png';
-          const contentType = webhookResponse.headers.get('content-type');
-
-          try {
-            if (contentType?.includes('application/json')) {
-              const webhookData = await webhookResponse.json();
-              imageUrl = webhookData.imageUrl || webhookData.url || webhookData.link || webhookData.image || '/MG.png';
-            } else {
-              const responseText = await webhookResponse.text();
-              imageUrl = responseText.trim() || '/MG.png';
-            }
-          } catch (parseError) {
-            console.error('Failed to parse webhook response:', parseError);
-            return;
-          }
-
-          // Convert Google Drive URL to direct image URL if needed
-          imageUrl = convertGoogleDriveUrl(imageUrl);
-
-          console.log(`✅ Background portrait generated for ${name}: ${imageUrl}`);
-
-          // Save image URL to Supabase
-          if (supabase && imageUrl !== '/MG.png') {
-            try {
-              const normalizedName = name.toLowerCase().trim();
-              console.log(`💾 Saving background portrait for: "${normalizedName}" -> ${imageUrl}`);
-              
-              const { data: upsertData, error: upsertError } = await supabase
-                .from('biographies')
-                .upsert(
-                  {
-                    name: normalizedName,
-                    display_name: name,
-                    image_url: imageUrl,
-                    biography: null,
-                    created_at: new Date().toISOString()
-                  },
-                  {
-                    onConflict: 'name',
-                    ignoreDuplicates: false
-                  }
-                )
-                .select();
-
-              if (upsertError) {
-                console.error('❌ Failed to save background portrait:', upsertError);
-              } else if (upsertData && upsertData.length > 0) {
-                console.log(`✅ Background portrait saved for: ${name}`);
-              }
-            } catch (saveError) {
-              console.error('Error saving background portrait:', saveError);
-            }
-          }
-        })
-        .catch((webhookError) => {
-          console.error(`⚠️ Background webhook error for ${name}:`, webhookError);
+      try {
+        const webhookResponse = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name }),
         });
 
-      // Return immediately with placeholder - webhook will update Supabase in background
-      console.log(`⚡ Returning immediately (generating in background)...`);
-      
-      return NextResponse.json({ 
-        imageUrl: '/MG.png',
-        cached: false,
-        generating: true, // Flag to indicate background generation
-        message: 'Portrait is being generated. Refresh in 60 seconds.'
-      });
+        if (!webhookResponse.ok) {
+          console.error('Webhook failed:', webhookResponse.statusText);
+          return NextResponse.json({ 
+            error: 'Webhook failed',
+            cached: false
+          }, { status: 500 });
+        }
+
+        // Get the image URL from webhook
+        let imageUrl = '';
+        const contentType = webhookResponse.headers.get('content-type');
+
+        try {
+          if (contentType?.includes('application/json')) {
+            const webhookData = await webhookResponse.json();
+            imageUrl = webhookData.imageUrl || webhookData.url || webhookData.link || webhookData.image || '';
+          } else {
+            const responseText = await webhookResponse.text();
+            imageUrl = responseText.trim() || '';
+          }
+        } catch (parseError) {
+          console.error('Failed to parse webhook response:', parseError);
+          return NextResponse.json({ 
+            error: 'Failed to parse webhook response',
+            cached: false
+          }, { status: 500 });
+        }
+
+        if (!imageUrl) {
+          console.error('No image URL received from webhook');
+          return NextResponse.json({ 
+            error: 'No image URL from webhook',
+            cached: false
+          }, { status: 500 });
+        }
+
+        // Convert Google Drive URL to direct image URL
+        imageUrl = convertGoogleDriveUrl(imageUrl);
+
+        console.log(`✅ Portrait generated for ${name}: ${imageUrl}`);
+
+        // Step 3: Update image URL in Supabase (row must already exist from biography API)
+        if (supabase && imageUrl) {
+          try {
+            const normalizedName = name.toLowerCase().trim();
+            console.log(`💾 Updating portrait URL for: "${normalizedName}" -> ${imageUrl}`);
+            
+            const { data: updateData, error: updateError } = await supabase
+              .from('biographies')
+              .update({ image_url: imageUrl })
+              .eq('name', normalizedName)
+              .select();
+
+            if (updateError) {
+              console.error('❌ Failed to update portrait URL:', updateError);
+            } else if (updateData && updateData.length > 0) {
+              console.log(`✅ Portrait URL updated for: ${name}`);
+            } else {
+              console.warn(`⚠️ No rows updated for: ${name}. Row might not exist yet.`);
+            }
+          } catch (saveError) {
+            console.error('Error updating portrait URL:', saveError);
+          }
+        }
+
+        return NextResponse.json({ 
+          imageUrl,
+          cached: false
+        });
+
+      } catch (webhookError) {
+        console.error('Webhook error:', webhookError);
+        return NextResponse.json({ 
+          error: 'Failed to generate portrait',
+          cached: false
+        }, { status: 500 });
+      }
 
   } catch (error) {
     console.error('Portrait API error:', error);
     return NextResponse.json(
-      { imageUrl: '/MG.png', error: 'Failed to fetch portrait' },
+      { error: 'Failed to fetch portrait' },
       { status: 500 }
     );
   }
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
 
 // Helper function to convert Google Drive URLs to direct image URLs
 function convertGoogleDriveUrl(url: string): string {
-  if (!url || url === '/MG.png') return url;
+  if (!url) return url;
 
   // Check if it's already in the correct format
   if (url.includes('drive.google.com/uc?')) {
