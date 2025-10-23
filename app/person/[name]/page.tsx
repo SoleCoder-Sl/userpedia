@@ -21,8 +21,17 @@ export default function PersonPage() {
   const portraitFetchingRef = useRef(false);
 
   useEffect(() => {
+    // Reset state when person changes to prevent showing wrong data
+    setImageUrl('/MG.png');
+    setBiography('');
+    setIsLoading(true);
+    setIsImageLoading(true);
+
+    let bioAborted = false;
+    let portraitAborted = false;
+
     const fetchBiography = async () => {
-      if (bioFetchingRef.current) {
+      if (bioFetchingRef.current || bioAborted) {
         console.log('⏭️ Skipping duplicate biography fetch');
         return;
       }
@@ -38,15 +47,17 @@ export default function PersonPage() {
           body: JSON.stringify({ name: personName }),
         });
 
-        if (response.ok) {
+        if (!bioAborted && response.ok) {
           const data = await response.json();
           setBiography(data.biography);
-        } else {
+        } else if (!bioAborted) {
           setBiography(`<p>Unable to load biography for ${personName}.</p>`);
         }
       } catch (error) {
-        console.error('Error fetching biography:', error);
-        setBiography(`<p>Unable to load biography for ${personName}.</p>`);
+        if (!bioAborted) {
+          console.error('Error fetching biography:', error);
+          setBiography(`<p>Unable to load biography for ${personName}.</p>`);
+        }
       } finally {
         setIsLoading(false);
         bioFetchingRef.current = false;
@@ -54,7 +65,7 @@ export default function PersonPage() {
     };
 
     const fetchPortrait = async () => {
-      if (portraitFetchingRef.current) {
+      if (portraitFetchingRef.current || portraitAborted) {
         console.log('⏭️ Skipping duplicate portrait fetch');
         return;
       }
@@ -70,7 +81,7 @@ export default function PersonPage() {
           body: JSON.stringify({ name: personName }),
         });
 
-        if (response.ok) {
+        if (!portraitAborted && response.ok) {
           const data = await response.json();
           let portraitUrl = data.imageUrl || '/MG.png';
           
@@ -78,16 +89,18 @@ export default function PersonPage() {
           if (portraitUrl.includes('drive.google.com')) {
             portraitUrl = `/api/image-proxy?url=${encodeURIComponent(portraitUrl)}`;
           }
-          
-          console.log(`🖼️ Portrait URL for ${personName}:`, portraitUrl);
+
+          console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
           setImageUrl(portraitUrl);
-        } else {
+        } else if (!portraitAborted) {
           console.error('Failed to fetch portrait:', response.statusText);
           setImageUrl('/MG.png');
         }
       } catch (error) {
-        console.error('Error fetching portrait:', error);
-        setImageUrl('/MG.png');
+        if (!portraitAborted) {
+          console.error('Error fetching portrait:', error);
+          setImageUrl('/MG.png');
+        }
       } finally {
         setIsImageLoading(false);
         portraitFetchingRef.current = false;
@@ -96,6 +109,12 @@ export default function PersonPage() {
 
     fetchBiography();
     fetchPortrait();
+
+    // Cleanup function to prevent state updates if component unmounts
+    return () => {
+      bioAborted = true;
+      portraitAborted = true;
+    };
   }, [personName]);
 
   const handleSearch = (query: string) => {
