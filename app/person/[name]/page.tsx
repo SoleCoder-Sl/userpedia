@@ -4,7 +4,7 @@ import { ExpandableButton } from "@/components/molecule-ui/expandable-button";
 import { Search } from "lucide-react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 export default function PersonPage() {
   const router = useRouter();
@@ -17,29 +17,23 @@ export default function PersonPage() {
   const [isImageLoading, setIsImageLoading] = useState(true);
   const [showSlowMessage, setShowSlowMessage] = useState(false);
 
-  // Track in-flight requests to prevent duplicates
-  const bioFetchingRef = useRef(false);
-  const portraitFetchingRef = useRef(false);
-  const slowMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   useEffect(() => {
-    // Reset state when person changes to prevent showing wrong data
+    console.log(`🔄 Effect triggered for: ${personName}`);
+    
+    // IMMEDIATELY clear old data to prevent showing wrong person's info
     setImageUrl('');
     setBiography('');
     setIsLoading(true);
     setIsImageLoading(true);
+    setShowSlowMessage(false);
 
-    let bioAborted = false;
-    let portraitAborted = false;
+    // Flag to prevent state updates after cleanup
+    let isActive = true;
+    let slowTimer: NodeJS.Timeout | null = null;
 
     const fetchBiography = async () => {
-      if (bioFetchingRef.current || bioAborted) {
-        console.log('⏭️ Skipping duplicate biography fetch');
-        return;
-      }
-      bioFetchingRef.current = true;
+      console.log(`📖 Fetching biography for: ${personName}`);
       
-      setIsLoading(true);
       try {
         const response = await fetch('/api/biography', {
           method: 'POST',
@@ -49,40 +43,40 @@ export default function PersonPage() {
           body: JSON.stringify({ name: personName }),
         });
 
-        if (!bioAborted && response.ok) {
+        if (!isActive) {
+          console.log(`⏭️ Biography response ignored (person changed): ${personName}`);
+          return;
+        }
+
+        if (response.ok) {
           const data = await response.json();
           setBiography(data.biography);
-        } else if (!bioAborted) {
+          console.log(`✅ Biography loaded for: ${personName}`);
+        } else {
           setBiography(`<p>Unable to load biography for ${personName}.</p>`);
         }
       } catch (error) {
-        if (!bioAborted) {
+        if (isActive) {
           console.error('Error fetching biography:', error);
           setBiography(`<p>Unable to load biography for ${personName}.</p>`);
         }
       } finally {
-        setIsLoading(false);
-        bioFetchingRef.current = false;
+        if (isActive) {
+          setIsLoading(false);
+        }
       }
     };
 
     const fetchPortrait = async () => {
-      if (portraitFetchingRef.current || portraitAborted) {
-        console.log('⏭️ Skipping duplicate portrait fetch');
-        return;
-      }
-      portraitFetchingRef.current = true;
+      console.log(`🖼️ Fetching portrait for: ${personName}`);
       
-      setIsImageLoading(true);
-      setShowSlowMessage(false);
-      
-      // Show message after 15 seconds if still loading
-      slowMessageTimerRef.current = setTimeout(() => {
-        if (!portraitAborted) {
-          console.log('⏰ Portrait taking longer than expected, showing message...');
+      // Show slow message after 15 seconds
+      slowTimer = setTimeout(() => {
+        if (isActive) {
+          console.log('⏰ Portrait taking longer than expected...');
           setShowSlowMessage(true);
         }
-      }, 15000); // 15 seconds
+      }, 15000);
       
       try {
         const response = await fetch('/api/portrait', {
@@ -93,7 +87,12 @@ export default function PersonPage() {
           body: JSON.stringify({ name: personName }),
         });
 
-        if (!portraitAborted && response.ok) {
+        if (!isActive) {
+          console.log(`⏭️ Portrait response ignored (person changed): ${personName}`);
+          return;
+        }
+
+        if (response.ok) {
           const data = await response.json();
           let portraitUrl = data.imageUrl || '';
           
@@ -103,43 +102,39 @@ export default function PersonPage() {
           }
 
           if (portraitUrl) {
-            console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
+            console.log(`✅ Portrait URL for "${personName}": ${portraitUrl}`);
             setImageUrl(portraitUrl);
-            setShowSlowMessage(false); // Hide message when image loads
+            setShowSlowMessage(false);
           } else {
-            console.warn(`No portrait URL received for: ${personName}`);
+            console.warn(`⚠️ No portrait URL received for: ${personName}`);
           }
-        } else if (!portraitAborted) {
-          console.error('Failed to fetch portrait:', response.statusText);
+        } else {
+          console.error(`❌ Failed to fetch portrait for ${personName}:`, response.statusText);
         }
       } catch (error) {
-        if (!portraitAborted) {
-          console.error('Error fetching portrait:', error);
+        if (isActive) {
+          console.error('❌ Error fetching portrait:', error);
         }
       } finally {
-        setIsImageLoading(false);
-        portraitFetchingRef.current = false;
-        
-        // Clear the slow message timer
-        if (slowMessageTimerRef.current) {
-          clearTimeout(slowMessageTimerRef.current);
-          slowMessageTimerRef.current = null;
+        if (slowTimer) {
+          clearTimeout(slowTimer);
+        }
+        if (isActive) {
+          setIsImageLoading(false);
         }
       }
     };
 
+    // Fetch data
     fetchBiography();
     fetchPortrait();
 
-    // Cleanup function to prevent state updates if component unmounts
+    // Cleanup: prevent state updates when person changes
     return () => {
-      bioAborted = true;
-      portraitAborted = true;
-      
-      // Clear slow message timer on unmount
-      if (slowMessageTimerRef.current) {
-        clearTimeout(slowMessageTimerRef.current);
-        slowMessageTimerRef.current = null;
+      console.log(`🧹 Cleaning up for: ${personName}`);
+      isActive = false;
+      if (slowTimer) {
+        clearTimeout(slowTimer);
       }
     };
   }, [personName]);
@@ -248,37 +243,46 @@ export default function PersonPage() {
                   outline: 'none',
                 }}
               >
-                {lastName.toUpperCase()}
+                {lastName}
               </span>
             )}
           </div>
         </div>
-        
-        <ExpandableButton icon={<Search />} onSearch={handleSearch} />
+
+        {/* Expandable Search Button */}
+        <ExpandableButton 
+          icon={<Search size={20} />}
+          onSearch={handleSearch}
+          className="z-50"
+        />
       </header>
 
-      {/* Content area with glass box */}
-      <div className="flex-1 flex flex-col items-center justify-center" style={{ paddingTop: '0', marginTop: '0' }}>
-        {/* Glass Morphism Box with Image */}
-        <div 
+      {/* Main Content Area */}
+      <main className="flex-1 flex items-center justify-center p-6 overflow-hidden">
+        {/* Glass Morphism Box */}
+        <div
           style={{
             position: 'relative',
+            width: '1000px',
+            height: '400px',
             background: 'rgba(0, 0, 0, 0.4)',
             backdropFilter: 'blur(10px)',
             WebkitBackdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '20px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            width: '1000px',
-            height: '400px',
+            borderRadius: '15px',
+            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+            display: 'flex',
+            alignItems: 'center',
+            paddingLeft: '250px', // Space for the image
+            overflow: 'hidden',
           }}
         >
-          {/* Image positioned half outside, half inside the box on left - FIXED */}
-          <div 
+          {/* Image Container (Half out, half in) */}
+          <div
             style={{
               position: 'absolute',
+              left: '-221px', // Half of 442px
               top: '50%',
-              left: '-221px',
               transform: 'translateY(-50%)',
               width: '442px',
               height: '442px',
@@ -326,6 +330,7 @@ export default function PersonPage() {
               </div>
             ) : imageUrl ? (
               <img
+                key={personName} // Force re-render on person change
                 src={imageUrl}
                 alt={personName}
                 width="442"
@@ -366,51 +371,32 @@ export default function PersonPage() {
           <div 
             className="custom-scrollbar"
             style={{
+              flex: 1,
               height: '100%',
-              overflowY: 'auto',
-              padding: '2rem',
-              paddingLeft: '180px',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
+              overflowY: 'scroll',
+              padding: '20px 40px 20px 0', // Adjusted padding for left alignment
+              color: 'rgba(255, 255, 255, 0.8)',
+              fontSize: '1rem',
+              lineHeight: '1.6',
+              textAlign: 'left',
+              scrollbarWidth: 'none', // Firefox
+              msOverflowStyle: 'none', // IE and Edge
             }}
           >
-            <div 
-              style={{
-                color: 'rgba(255, 255, 255, 0.9)',
-                fontSize: '15px',
-                lineHeight: '1.8',
-                textAlign: 'justify',
-              }}
-            >
-            <h2 
-              style={{
-                fontSize: '24px',
-                fontWeight: 700,
-                marginBottom: '1rem',
-                color: 'rgba(255, 255, 255, 0.95)',
-                fontFamily: "'Playfair Display', serif",
-              }}
-            >
-              Biography
-            </h2>
-            
+            {/* Hide scrollbar for Webkit browsers */}
+            <style jsx global>{`
+              .custom-scrollbar::-webkit-scrollbar {
+                display: none;
+              }
+            `}</style>
             {isLoading ? (
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                minHeight: '200px',
-                color: 'rgba(255, 255, 255, 0.7)',
-              }}>
-                <p>Loading biography...</p>
-              </div>
+              <p>Loading biography...</p>
             ) : (
               <div dangerouslySetInnerHTML={{ __html: biography }} />
             )}
-            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
