@@ -15,10 +15,12 @@ export default function PersonPage() {
   const [imageUrl, setImageUrl] = useState<string>('/MG.png');
   const [isLoading, setIsLoading] = useState(true);
   const [isImageLoading, setIsImageLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Track in-flight requests to prevent duplicates
   const bioFetchingRef = useRef(false);
   const portraitFetchingRef = useRef(false);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Reset state when person changes to prevent showing wrong data
@@ -84,6 +86,23 @@ export default function PersonPage() {
         if (!portraitAborted && response.ok) {
           const data = await response.json();
           let portraitUrl = data.imageUrl || '/MG.png';
+          const generating = data.generating || false;
+          
+          // If image is being generated in background, start polling
+          if (generating && portraitUrl === '/MG.png') {
+            setIsGenerating(true);
+            console.log(`⏳ Portrait is being generated in background. Will check again in 60s...`);
+            
+            // Poll for the image after 60 seconds
+            if (pollIntervalRef.current) {
+              clearTimeout(pollIntervalRef.current);
+            }
+            pollIntervalRef.current = setTimeout(() => {
+              console.log(`🔄 Polling for generated portrait...`);
+              portraitFetchingRef.current = false; // Reset to allow re-fetch
+              fetchPortrait(); // Re-fetch the portrait
+            }, 60000); // 60 seconds
+          }
           
           // If it's a Google Drive URL, proxy it through our server to avoid CORS
           if (portraitUrl.includes('drive.google.com')) {
@@ -92,6 +111,15 @@ export default function PersonPage() {
 
           console.log(`🖼️ Setting portrait for "${personName}":`, portraitUrl);
           setImageUrl(portraitUrl);
+          
+          // If we got a real image, stop polling
+          if (portraitUrl !== '/MG.png') {
+            setIsGenerating(false);
+            if (pollIntervalRef.current) {
+              clearTimeout(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+          }
         } else if (!portraitAborted) {
           console.error('Failed to fetch portrait:', response.statusText);
           setImageUrl('/MG.png');
@@ -114,6 +142,12 @@ export default function PersonPage() {
     return () => {
       bioAborted = true;
       portraitAborted = true;
+      
+      // Clear polling interval on unmount
+      if (pollIntervalRef.current) {
+        clearTimeout(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     };
   }, [personName]);
 
