@@ -96,19 +96,30 @@ export async function POST(req: NextRequest) {
           const normalizedName = name.toLowerCase().trim();
           console.log(`💾 Attempting to save portrait URL for: "${normalizedName}" -> ${imageUrl}`);
           
-          // Use upsert to ensure row exists
-          const { data: updateData, error: updateError } = await supabase
+          // Use UPSERT: Insert if not exists, Update if exists
+          const { data: upsertData, error: upsertError } = await supabase
             .from('biographies')
-            .update({ image_url: imageUrl })
-            .eq('name', normalizedName)
+            .upsert(
+              {
+                name: normalizedName,
+                display_name: name,
+                image_url: imageUrl,
+                biography: null, // Will be filled by biography API
+                created_at: new Date().toISOString()
+              },
+              {
+                onConflict: 'name', // Update on conflict with 'name' column
+                ignoreDuplicates: false // Update existing rows
+              }
+            )
             .select();
 
-          if (updateError) {
-            console.error('❌ Failed to save portrait URL:', updateError);
-          } else if (updateData && updateData.length > 0) {
-            console.log(`✅ Portrait URL saved for: ${name} (${updateData.length} row(s) updated)`);
+          if (upsertError) {
+            console.error('❌ Failed to save portrait URL:', upsertError);
+          } else if (upsertData && upsertData.length > 0) {
+            console.log(`✅ Portrait URL saved for: ${name} (upserted ${upsertData.length} row(s))`);
           } else {
-            console.warn(`⚠️ No rows updated for: ${name}. Row might not exist yet.`);
+            console.warn(`⚠️ Upsert returned no data for: ${name}`);
           }
         } catch (saveError) {
           console.error('Error saving portrait URL:', saveError);
