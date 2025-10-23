@@ -88,8 +88,11 @@ export async function POST(req: NextRequest) {
         }
 
         // Convert Google Drive URL to direct image URL
+        const originalUrl = imageUrl;
         imageUrl = convertGoogleDriveUrl(imageUrl);
 
+        console.log(`📥 Webhook returned URL: ${originalUrl}`);
+        console.log(`🔄 Converted to direct URL: ${imageUrl}`);
         console.log(`✅ Portrait generated for ${name}: ${imageUrl}`);
 
         // Step 3: Update image URL in Supabase (row must already exist from biography API)

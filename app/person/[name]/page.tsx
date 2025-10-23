@@ -102,9 +102,11 @@ export default function PersonPage() {
           }
 
           if (portraitUrl) {
-            console.log(`✅ Portrait URL for "${personName}": ${portraitUrl}`);
+            console.log(`✅ Portrait URL received from API for "${personName}": ${portraitUrl}`);
+            console.log(`🖼️ Setting image URL in state for "${personName}"`);
             setImageUrl(portraitUrl);
             setShowSlowMessage(false);
+            console.log(`✅ Image URL set successfully for "${personName}"`);
           } else {
             console.warn(`⚠️ No portrait URL received for: ${personName}`);
           }
